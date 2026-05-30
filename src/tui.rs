@@ -26,6 +26,7 @@ pub struct App {
     pub filtered: Vec<usize>,
     pub selected: usize,
     pub list_area: Rect,
+    pub copied: Option<(String, String)>, // (title, prompt_text) set on Enter
 }
 
 impl App {
@@ -38,6 +39,7 @@ impl App {
             filtered,
             selected: 0,
             list_area: Rect::default(),
+            copied: None,
         }
     }
 
@@ -65,6 +67,12 @@ impl App {
                 KeyCode::Up => {
                     if self.selected > 0 {
                         self.selected -= 1;
+                    }
+                }
+                KeyCode::Enter => {
+                    if let Some(p) = self.selected_prompt() {
+                        self.copied = Some((p.title.clone(), p.prompt.clone()));
+                        self.running = false;
                     }
                 }
                 _ => {}
@@ -245,7 +253,7 @@ impl Drop for TerminalGuard {
 }
 
 pub fn run() -> Result<()> {
-    let _guard = TerminalGuard::setup()?;
+    let guard = TerminalGuard::setup()?;
 
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
@@ -261,6 +269,18 @@ pub fn run() -> Result<()> {
         if event::poll(std::time::Duration::from_millis(16))? {
             app.handle_event(&event::read()?);
         }
+    }
+
+    // Restore terminal before any stdout output so the message appears on the
+    // main screen, not inside the (soon-to-be-cleared) alternate screen buffer.
+    drop(terminal);
+    drop(guard);
+
+    if let Some((title, prompt_text)) = app.copied {
+        arboard::Clipboard::new()
+            .and_then(|mut cb| cb.set_text(prompt_text))
+            .map_err(|e| anyhow::anyhow!("clipboard error: {}", e))?;
+        println!("Copied: {}", title);
     }
 
     Ok(())
@@ -597,5 +617,53 @@ mod tests {
         app.list_area = list_area();
         app.handle_event(&mouse_click(5, 10)); // row 10 = item index 6, beyond 3 items
         assert_eq!(app.selected, 0); // unchanged
+    }
+
+    // ── Enter key: copy intent ───────────────────────────────────────────────
+
+    #[test]
+    fn enter_with_selection_sets_copied() {
+        let mut app = App::new(make_prompts());
+        app.handle_event(&key(KeyCode::Enter));
+        let (title, prompt) = app.copied.as_ref().unwrap();
+        assert_eq!(title, "Performance Review");
+        assert_eq!(prompt, "Review performance...");
+    }
+
+    #[test]
+    fn enter_with_selection_stops_running() {
+        let mut app = App::new(make_prompts());
+        app.handle_event(&key(KeyCode::Enter));
+        assert!(!app.running);
+    }
+
+    #[test]
+    fn enter_on_empty_list_is_noop() {
+        let mut app = App::new(vec![]);
+        app.handle_event(&key(KeyCode::Enter));
+        assert!(app.copied.is_none());
+        assert!(app.running);
+    }
+
+    #[test]
+    fn enter_on_empty_filtered_list_is_noop() {
+        let mut app = App::new(make_prompts());
+        for c in "xyzxyz".chars() {
+            app.handle_event(&key(KeyCode::Char(c)));
+        }
+        assert!(app.filtered.is_empty());
+        app.handle_event(&key(KeyCode::Enter));
+        assert!(app.copied.is_none());
+        assert!(app.running);
+    }
+
+    #[test]
+    fn enter_copies_the_selected_prompt() {
+        let mut app = App::new(make_prompts());
+        app.handle_event(&key(KeyCode::Down)); // select "code-review"
+        app.handle_event(&key(KeyCode::Enter));
+        let (title, prompt) = app.copied.as_ref().unwrap();
+        assert_eq!(title, "Code Review");
+        assert_eq!(prompt, "Review the code...");
     }
 }
