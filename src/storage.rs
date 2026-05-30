@@ -30,6 +30,9 @@ pub fn find_by_id<'a>(prompts: &'a [Prompt], id: &str) -> Option<&'a Prompt> {
 }
 
 fn config_path() -> Result<PathBuf> {
+    if let Ok(path) = std::env::var("PBOX_CONFIG_FILE") {
+        return Ok(PathBuf::from(path));
+    }
     let dirs = ProjectDirs::from("", "", "prompt-box")
         .ok_or_else(|| anyhow::anyhow!("could not determine config directory"))?;
     Ok(dirs.config_dir().join("prompts.json"))

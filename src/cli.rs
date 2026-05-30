@@ -1,5 +1,7 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
+
+use crate::storage;
 
 #[derive(Parser)]
 #[command(name = "pbox", about = "A CLI/TUI prompt manager for developers and AI agents")]
@@ -43,12 +45,43 @@ pub enum Commands {
 pub fn run() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Get { .. } => println!("not implemented"),
-        Commands::Search { .. } => println!("not implemented"),
-        Commands::List => println!("not implemented"),
-        Commands::Add { .. } => println!("not implemented"),
-        Commands::Edit { .. } => println!("not implemented"),
-        Commands::Remove { .. } => println!("not implemented"),
+        Commands::Get { id, copy: _ } => cmd_get(&id),
+        Commands::List => cmd_list(),
+        Commands::Search { .. } => {
+            println!("not implemented");
+            Ok(())
+        }
+        Commands::Add { .. } => {
+            println!("not implemented");
+            Ok(())
+        }
+        Commands::Edit { .. } => {
+            println!("not implemented");
+            Ok(())
+        }
+        Commands::Remove { .. } => {
+            println!("not implemented");
+            Ok(())
+        }
     }
+}
+
+fn cmd_list() -> Result<()> {
+    let prompts = storage::load_prompts()?;
+    if prompts.is_empty() {
+        println!("No prompts found.");
+        return Ok(());
+    }
+    for p in &prompts {
+        println!("[{}] {} — {}", p.category, p.id, p.description);
+    }
+    Ok(())
+}
+
+fn cmd_get(id: &str) -> Result<()> {
+    let prompts = storage::load_prompts()?;
+    let p = storage::find_by_id(&prompts, id)
+        .ok_or_else(|| anyhow!("prompt '{}' not found", id))?;
+    print!("{}", p.prompt);
     Ok(())
 }
