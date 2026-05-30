@@ -3,7 +3,7 @@
 ## Phase 1: Core CLI & Storage
 
 - [x] T1: Project scaffold (Cargo.toml + module stubs, `cargo build` clean)
-- [ ] T2: Storage layer (`Prompt` struct, JSON r/w, config dir, unit tests)
+- [x] T2: Storage layer (`Prompt` struct, JSON r/w, config dir, unit tests)
 - [ ] T3: CLI skeleton + mode dispatch (clap stubs, TUI placeholder)
 - [ ] T4: `pbox list` + `pbox get` (stdout, pipeable)
 - [ ] T5: `pbox add` + `pbox remove`

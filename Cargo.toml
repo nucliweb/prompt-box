@@ -9,6 +9,9 @@ license = "MIT"
 name = "pbox"
 path = "src/main.rs"
 
+[dev-dependencies]
+tempfile = "3"
+
 [dependencies]
 anyhow = "1"
 arboard = "3"
