@@ -1,7 +1,9 @@
 use anyhow::Result;
+use chrono::Utc;
 use crossterm::{
     event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, MouseButton, MouseEventKind,
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseButton,
+        MouseEventKind,
     },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -27,6 +29,9 @@ pub struct App {
     pub selected: usize,
     pub list_area: Rect,
     pub copied: Option<(String, String)>, // (title, prompt_text) set on Enter
+    pub edit_mode: bool,                  // 'e' pressed, edit needed
+    pub confirm_delete: bool,             // 'd' pressed, waiting for y/n
+    pub pending_delete: bool,             // 'y' confirmed, delete needed
 }
 
 impl App {
@@ -40,6 +45,9 @@ impl App {
             selected: 0,
             list_area: Rect::default(),
             copied: None,
+            edit_mode: false,
+            confirm_delete: false,
+            pending_delete: false,
         }
     }
 
@@ -53,7 +61,31 @@ impl App {
 
     pub fn handle_event(&mut self, event: &Event) {
         match event {
-            Event::Key(key) => match key.code {
+            Event::Key(key) => {
+                // In confirm_delete mode intercept all keys before normal handling
+                if self.confirm_delete {
+                    if key.code == KeyCode::Char('y') {
+                        self.confirm_delete = false;
+                        self.pending_delete = true;
+                    } else {
+                        self.confirm_delete = false;
+                    }
+                    return;
+                }
+                // Ctrl+E → edit, Ctrl+D → delete (avoid conflicting with search input)
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    match key.code {
+                        KeyCode::Char('e') if self.selected_prompt().is_some() => {
+                            self.edit_mode = true;
+                        }
+                        KeyCode::Char('d') if self.selected_prompt().is_some() => {
+                            self.confirm_delete = true;
+                        }
+                        _ => {}
+                    }
+                    return;
+                }
+                match key.code {
                 KeyCode::Char('q') | KeyCode::Esc => self.running = false,
                 KeyCode::Char(c) => {
                     self.query.push(c);
@@ -80,7 +112,8 @@ impl App {
                     }
                 }
                 _ => {}
-            },
+                } // close match key.code
+            } // close Event::Key block
             Event::Mouse(mouse_event) => match mouse_event.kind {
                 MouseEventKind::ScrollDown => {
                     if !self.filtered.is_empty() && self.selected + 1 < self.filtered.len() {
@@ -231,15 +264,30 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
         main_cols[1],
     );
 
-    // Status bar: key hints (left) | counter (right)
+    // Status bar: hints (left) | counter (right)
     let status_cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Min(0), Constraint::Length(20)])
         .split(outer[2]);
 
+    let hints = if app.confirm_delete {
+        if let Some(p) = app.selected_prompt() {
+            format!("Delete \"{}\"? (y/n)", p.title)
+        } else {
+            String::new()
+        }
+    } else {
+        "[↑↓/scroll] Navigate  [^E] Edit  [^D] Delete  [Enter] Copy & Exit  [Esc/q] Quit".to_string()
+    };
+
+    let hints_style = if app.confirm_delete {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
     frame.render_widget(
-        Paragraph::new("[↑↓/scroll] Navigate  [Enter] Copy & Exit  [Esc/q] Quit")
-            .style(Style::default().fg(Color::DarkGray)),
+        Paragraph::new(hints).style(hints_style),
         status_cols[0],
     );
     frame.render_widget(
@@ -284,6 +332,46 @@ pub fn run() -> Result<()> {
         if event::poll(std::time::Duration::from_millis(16))? {
             app.handle_event(&event::read()?);
         }
+
+        if app.edit_mode {
+            app.edit_mode = false;
+            if let Some(p) = app.selected_prompt() {
+                let initial = p.prompt.clone();
+                let id = p.id.clone();
+
+                disable_raw_mode()?;
+                execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
+
+                let result = crate::editor::open_editor(&initial);
+
+                enable_raw_mode()?;
+                execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
+                terminal.clear()?;
+
+                if let Ok(Some(new_text)) = result {
+                    let mut prompts = crate::storage::load_prompts().unwrap_or_default();
+                    if let Some(pm) = prompts.iter_mut().find(|pm| pm.id == id) {
+                        pm.prompt = new_text;
+                        pm.updated_at = Utc::now().to_rfc3339();
+                    }
+                    let _ = crate::storage::save_prompts(&prompts);
+                    app.prompts = prompts;
+                    app.refilter();
+                }
+            }
+        }
+
+        if app.pending_delete {
+            app.pending_delete = false;
+            if let Some(p) = app.selected_prompt() {
+                let id = p.id.clone();
+                let mut prompts = crate::storage::load_prompts().unwrap_or_default();
+                prompts.retain(|p| p.id != id);
+                let _ = crate::storage::save_prompts(&prompts);
+                app.prompts = prompts;
+                app.refilter();
+            }
+        }
     }
 
     // Restore terminal before any stdout output so the message appears on the
@@ -308,6 +396,10 @@ mod tests {
 
     fn key(code: KeyCode) -> Event {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    fn ctrl_key(code: KeyCode) -> Event {
+        Event::Key(KeyEvent::new(code, KeyModifiers::CONTROL))
     }
 
     fn mouse_scroll(kind: MouseEventKind) -> Event {
@@ -632,6 +724,84 @@ mod tests {
         app.list_area = list_area();
         app.handle_event(&mouse_click(5, 10)); // row 10 = item index 6, beyond 3 items
         assert_eq!(app.selected, 0); // unchanged
+    }
+
+    // ── edit mode ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn ctrl_e_sets_edit_mode() {
+        let mut app = App::new(make_prompts());
+        app.handle_event(&ctrl_key(KeyCode::Char('e')));
+        assert!(app.edit_mode);
+        assert!(app.running);
+    }
+
+    #[test]
+    fn ctrl_e_on_empty_list_is_noop() {
+        let mut app = App::new(vec![]);
+        app.handle_event(&ctrl_key(KeyCode::Char('e')));
+        assert!(!app.edit_mode);
+    }
+
+    #[test]
+    fn plain_e_still_appends_to_query() {
+        let mut app = App::new(make_prompts());
+        app.handle_event(&key(KeyCode::Char('e')));
+        assert_eq!(app.query, "e");
+        assert!(!app.edit_mode);
+    }
+
+    // ── delete confirmation ──────────────────────────────────────────────────
+
+    #[test]
+    fn ctrl_d_sets_confirm_delete() {
+        let mut app = App::new(make_prompts());
+        app.handle_event(&ctrl_key(KeyCode::Char('d')));
+        assert!(app.confirm_delete);
+        assert!(app.running);
+    }
+
+    #[test]
+    fn ctrl_d_on_empty_list_is_noop() {
+        let mut app = App::new(vec![]);
+        app.handle_event(&ctrl_key(KeyCode::Char('d')));
+        assert!(!app.confirm_delete);
+    }
+
+    #[test]
+    fn plain_d_still_appends_to_query() {
+        let mut app = App::new(make_prompts());
+        app.handle_event(&key(KeyCode::Char('d')));
+        assert_eq!(app.query, "d");
+        assert!(!app.confirm_delete);
+    }
+
+    #[test]
+    fn y_in_confirm_delete_sets_pending_delete() {
+        let mut app = App::new(make_prompts());
+        app.handle_event(&ctrl_key(KeyCode::Char('d')));
+        app.handle_event(&key(KeyCode::Char('y')));
+        assert!(!app.confirm_delete);
+        assert!(app.pending_delete);
+    }
+
+    #[test]
+    fn other_key_in_confirm_delete_cancels() {
+        let mut app = App::new(make_prompts());
+        app.handle_event(&ctrl_key(KeyCode::Char('d')));
+        app.handle_event(&key(KeyCode::Char('n')));
+        assert!(!app.confirm_delete);
+        assert!(!app.pending_delete);
+        assert!(app.running);
+    }
+
+    #[test]
+    fn q_in_confirm_delete_cancels_not_quits() {
+        let mut app = App::new(make_prompts());
+        app.handle_event(&ctrl_key(KeyCode::Char('d')));
+        app.handle_event(&key(KeyCode::Char('q')));
+        assert!(!app.confirm_delete);
+        assert!(app.running);
     }
 
     // ── counter_text ────────────────────────────────────────────────────────
