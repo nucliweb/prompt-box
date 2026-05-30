@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use chrono::Utc;
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::{generate, Shell};
 use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 use std::io::{Read, Write};
 
@@ -45,6 +46,8 @@ pub enum Commands {
     Edit { id: String },
     /// Remove a prompt
     Remove { id: String },
+    /// Generate shell completion scripts
+    Completions { shell: Shell },
 }
 
 pub fn run() -> Result<()> {
@@ -58,7 +61,14 @@ pub fn run() -> Result<()> {
         Commands::Remove { id } => cmd_remove(&id),
         Commands::Search { query, json } => cmd_search(&query, json),
         Commands::Edit { id } => cmd_edit(&id),
+        Commands::Completions { shell } => cmd_completions(shell),
     }
+}
+
+fn cmd_completions(shell: Shell) -> Result<()> {
+    let mut cmd = Cli::command();
+    generate(shell, &mut cmd, "pbox", &mut std::io::stdout());
+    Ok(())
 }
 
 fn cmd_list() -> Result<()> {

@@ -474,6 +474,56 @@ fn add_with_force_editor_aborts_on_empty() {
         .stdout(predicate::str::contains("Aborted."));
 }
 
+// ── T13: Shell completions ────────────────────────────────────────────────────
+
+#[test]
+fn completions_bash_outputs_script() {
+    let output = Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["completions", "bash"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(!stdout.is_empty());
+    assert!(stdout.contains("pbox"), "bash completion should reference 'pbox'");
+}
+
+#[test]
+fn completions_zsh_outputs_script() {
+    let output = Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["completions", "zsh"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(!stdout.is_empty());
+    assert!(stdout.contains("pbox"), "zsh completion should reference 'pbox'");
+}
+
+#[test]
+fn completions_fish_outputs_script() {
+    let output = Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["completions", "fish"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(!stdout.is_empty());
+    assert!(stdout.contains("pbox"), "fish completion should reference 'pbox'");
+}
+
+#[test]
+fn completions_unknown_shell_exits_1() {
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["completions", "tcsh"])
+        .assert()
+        .failure();
+}
+
 #[test]
 fn add_with_force_editor_saves_prompt() {
     let script_dir = TempDir::new().unwrap();

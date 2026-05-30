@@ -20,6 +20,7 @@ anyhow = "1"
 chrono = "0.4"
 arboard = "3"
 clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
 crossterm = { version = "0.28", features = ["event-stream"] }
 directories = "5"
 fuzzy-matcher = "0.3"
