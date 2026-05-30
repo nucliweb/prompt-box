@@ -12,6 +12,7 @@ $ pbox
 
 - **Interactive TUI** — fuzzy search, split preview pane, mouse support
 - **Full CLI** — scriptable subcommands for every operation
+- **AI CLI integrations** — insert prompts directly into Claude Code and other AI tools
 - **Editor integration** — opens `$EDITOR` to write prompts (falls back to nano/vim)
 - **Clipboard support** — copy any prompt directly to the system clipboard
 - **Import / Export** — JSON round-trip for backups and sharing
@@ -193,11 +194,58 @@ Prompts are stored in the OS config directory:
 | macOS | `~/Library/Application Support/prompt-box/prompts.json` |
 | Windows | `%APPDATA%\prompt-box\prompts.json` |
 
+## AI CLI integrations
+
+`pbox` integrates with AI CLI tools that support an external editor for their input field. The TUI opens as an overlay, you pick a prompt, and it is inserted directly into the tool's input — without leaving the terminal.
+
+### Claude Code
+
+1. Create a wrapper script at a location in your PATH (e.g. `~/.local/bin/pbox-editor`):
+
+   ```bash
+   #!/bin/bash
+   PBOX_OUTPUT_FILE="$1" pbox
+   ```
+
+   Make it executable:
+
+   ```bash
+   chmod +x ~/.local/bin/pbox-editor
+   ```
+
+2. Add the following to your Claude Code settings (`~/.claude/settings.json`):
+
+   ```json
+   {
+     "env": {
+       "EDITOR": "/path/to/pbox-editor"
+     }
+   }
+   ```
+
+3. Add a keybinding to your Claude Code keybindings (`~/.claude/keybindings.json`):
+
+   ```json
+   {
+     "bindings": [
+       {
+         "context": "Chat",
+         "bindings": {
+           "ctrl+p": "chat:externalEditor"
+         }
+       }
+     ]
+   }
+   ```
+
+Press `Ctrl+P` in the Claude Code chat input to open the pbox TUI, select a prompt with `Enter`, and it is inserted into the input field.
+
 ## Environment variables
 
 | Variable | Description |
 |----------|-------------|
 | `PBOX_CONFIG_FILE` | Override the default storage path |
+| `PBOX_OUTPUT_FILE` | Write the selected prompt to a file instead of stdout (used by AI CLI integrations) |
 | `EDITOR` | Editor used by `pbox add` and `pbox edit` (falls back to nano or vim) |
 | `PBOX_FORCE_EDITOR` | Always open `$EDITOR`, even when stdin is not a terminal |
 

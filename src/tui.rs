@@ -381,9 +381,14 @@ pub fn run() -> Result<()> {
 
     if let Some((title, prompt_text)) = app.copied {
         arboard::Clipboard::new()
-            .and_then(|mut cb| cb.set_text(prompt_text))
+            .and_then(|mut cb| cb.set_text(prompt_text.clone()))
             .map_err(|e| anyhow::anyhow!("clipboard error: {}", e))?;
-        println!("Copied: {}", title);
+        if let Ok(output_file) = std::env::var("PBOX_OUTPUT_FILE") {
+            std::fs::write(output_file, &prompt_text)?;
+        } else {
+            print!("{}", prompt_text);
+            eprintln!("Copied: {}", title);
+        }
     }
 
     Ok(())
