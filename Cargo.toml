@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2021"
 description = "A lightweight CLI/TUI prompt manager for developers and AI agents"
 license = "MIT"
+repository = "https://github.com/nucliweb/prompt-box"
+homepage = "https://github.com/nucliweb/prompt-box"
+readme = "README.md"
+keywords = ["cli", "tui", "prompt", "ai", "manager"]
+categories = ["command-line-utilities"]
 
 [[bin]]
 name = "pbox"
