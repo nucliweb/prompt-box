@@ -50,7 +50,7 @@ pub enum Commands {
 pub fn run() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Get { id, copy: _ } => cmd_get(&id),
+        Commands::Get { id, copy } => cmd_get(&id, copy),
         Commands::List => cmd_list(),
         Commands::Add { id, title, category, tags, description } => {
             cmd_add(&id, &title, &category, &tags, &description)
@@ -76,11 +76,19 @@ fn cmd_list() -> Result<()> {
     Ok(())
 }
 
-fn cmd_get(id: &str) -> Result<()> {
+fn cmd_get(id: &str, copy: bool) -> Result<()> {
     let prompts = storage::load_prompts()?;
     let p = storage::find_by_id(&prompts, id)
         .ok_or_else(|| anyhow!("prompt '{}' not found", id))?;
-    print!("{}", p.prompt);
+
+    if copy {
+        arboard::Clipboard::new()
+            .and_then(|mut cb| cb.set_text(p.prompt.clone()))
+            .map_err(|e| anyhow!("clipboard error: {}", e))?;
+        eprintln!("Copied to clipboard: {}", p.title);
+    } else {
+        print!("{}", p.prompt);
+    }
     Ok(())
 }
 

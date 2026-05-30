@@ -348,3 +348,52 @@ fn search_json_no_matches_outputs_empty_array() {
         .expect("output should be valid JSON");
     assert_eq!(parsed, serde_json::json!([]));
 }
+
+// ── T7: get --copy ────────────────────────────────────────────────────────────
+
+#[test]
+fn get_without_copy_still_outputs_to_stdout() {
+    let dir = TempDir::new().unwrap();
+    let config = setup_prompts(&dir);
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["get", "webperf"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Act as a web performance expert."));
+}
+
+#[test]
+fn get_copy_produces_no_stdout() {
+    let dir = TempDir::new().unwrap();
+    let config = setup_prompts(&dir);
+    let output = Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["get", "webperf", "--copy"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .output()
+        .unwrap();
+    // Whether clipboard succeeds or fails, nothing must go to stdout
+    assert!(
+        output.stdout.is_empty(),
+        "stdout should be empty when --copy is used, got: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+// Clipboard write requires a running pasteboard server (interactive session).
+// Run manually: pbox get <id> --copy && pbpaste
+#[test]
+#[ignore]
+fn get_copy_prints_confirmation_to_stderr() {
+    let dir = TempDir::new().unwrap();
+    let config = setup_prompts(&dir);
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["get", "webperf", "--copy"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("Copied"));
+}

@@ -8,7 +8,7 @@
 - [x] T4: `pbox list` + `pbox get` (stdout, pipeable)
 - [x] T5: `pbox add` + `pbox remove`
 - [x] T6: `pbox search` (fuzzy ranking, `--json` flag)
-- [ ] T7: `pbox get --copy` (arboard clipboard)
+- [x] T7: `pbox get --copy` (arboard clipboard)
 
 **[ ] CHECKPOINT 1** — cargo test passes, all CLI commands work end-to-end
 
