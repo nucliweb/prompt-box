@@ -55,6 +55,18 @@ pub enum Commands {
     Completions { shell: Shell },
     /// Duplicate a prompt under a new id
     Duplicate { id: String, new_id: String },
+    /// Export all prompts as JSON
+    Export {
+        #[arg(long, help = "Write to file instead of stdout")]
+        output: Option<std::path::PathBuf>,
+    },
+    /// Import prompts from a JSON file (or stdin)
+    Import {
+        #[arg(help = "JSON file to import (reads stdin if omitted)")]
+        file: Option<std::path::PathBuf>,
+        #[arg(long, help = "Replace existing prompts with matching ids")]
+        overwrite: bool,
+    },
 }
 
 pub fn run() -> Result<()> {
@@ -70,6 +82,8 @@ pub fn run() -> Result<()> {
         Commands::Edit { id } => cmd_edit(&id),
         Commands::Completions { shell } => cmd_completions(shell),
         Commands::Duplicate { id, new_id } => cmd_duplicate(&id, &new_id),
+        Commands::Export { output } => cmd_export(output.as_deref()),
+        Commands::Import { file, overwrite } => cmd_import(file.as_deref(), overwrite),
     }
 }
 
@@ -94,6 +108,54 @@ fn cmd_duplicate(id: &str, new_id: &str) -> Result<()> {
 
     storage::save_prompts(&prompts)?;
     println!("Duplicated: {} → {}", id, new_id);
+    Ok(())
+}
+
+fn cmd_export(output: Option<&std::path::Path>) -> Result<()> {
+    let prompts = storage::load_prompts()?;
+    let json = serde_json::to_string_pretty(&prompts)?;
+    match output {
+        Some(path) => {
+            std::fs::write(path, &json)?;
+            println!("Exported: {} prompts to {}", prompts.len(), path.display());
+        }
+        None => print!("{}", json),
+    }
+    Ok(())
+}
+
+fn cmd_import(file: Option<&std::path::Path>, overwrite: bool) -> Result<()> {
+    let json = match file {
+        Some(path) => std::fs::read_to_string(path)
+            .map_err(|e| anyhow!("cannot read '{}': {}", path.display(), e))?,
+        None => {
+            let mut s = String::new();
+            std::io::stdin().read_to_string(&mut s)?;
+            s
+        }
+    };
+
+    let incoming: Vec<Prompt> =
+        serde_json::from_str(&json).map_err(|e| anyhow!("invalid JSON: {}", e))?;
+
+    let mut prompts = storage::load_prompts()?;
+    let (mut added, mut updated, mut skipped) = (0usize, 0usize, 0usize);
+
+    for p in incoming {
+        match prompts.iter().position(|e| e.id == p.id) {
+            Some(pos) if overwrite => { prompts[pos] = p; updated += 1; }
+            Some(_) => skipped += 1,
+            None => { prompts.push(p); added += 1; }
+        }
+    }
+
+    storage::save_prompts(&prompts)?;
+
+    let mut parts = vec![];
+    if added > 0 { parts.push(format!("{} added", added)); }
+    if updated > 0 { parts.push(format!("{} updated", updated)); }
+    if skipped > 0 { parts.push(format!("{} skipped", skipped)); }
+    println!("Imported: {}.", parts.join(", "));
     Ok(())
 }
 

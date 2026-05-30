@@ -504,6 +504,138 @@ fn add_with_force_editor_aborts_on_empty() {
         .stdout(predicate::str::contains("Aborted."));
 }
 
+// ── #4: pbox export / pbox import ────────────────────────────────────────────
+
+#[test]
+fn export_outputs_valid_json_array_to_stdout() {
+    let dir = TempDir::new().unwrap();
+    let config = setup_prompts(&dir);
+    let output = Command::cargo_bin("pbox")
+        .unwrap()
+        .arg("export")
+        .env("PBOX_CONFIG_FILE", &config)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let parsed: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(output.stdout).unwrap()).unwrap();
+    assert!(parsed.is_array());
+    assert_eq!(parsed[0]["id"], "webperf");
+}
+
+#[test]
+fn export_output_flag_writes_to_file() {
+    let dir = TempDir::new().unwrap();
+    let config = setup_prompts(&dir);
+    let out_file = dir.path().join("exported.json");
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["export", "--output", out_file.to_str().unwrap()])
+        .env("PBOX_CONFIG_FILE", &config)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Exported"));
+    let parsed: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&out_file).unwrap()).unwrap();
+    assert_eq!(parsed[0]["id"], "webperf");
+}
+
+#[test]
+fn import_from_file_adds_new_prompts() {
+    let dir = TempDir::new().unwrap();
+    let config = dir.path().join("prompts.json");
+    let import_file = dir.path().join("import.json");
+    fs::write(
+        &import_file,
+        r#"[{"id":"new-prompt","title":"New","category":"test","description":"","prompt":"new body","tags":[],"created_at":"2026-05-31T00:00:00Z","updated_at":"2026-05-31T00:00:00Z"}]"#,
+    ).unwrap();
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["import", import_file.to_str().unwrap()])
+        .env("PBOX_CONFIG_FILE", &config)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1 added"));
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .arg("list")
+        .env("PBOX_CONFIG_FILE", &config)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("new-prompt"));
+}
+
+#[test]
+fn import_skips_duplicate_ids_by_default() {
+    let dir = TempDir::new().unwrap();
+    let config = setup_prompts(&dir);
+    let import_file = dir.path().join("import.json");
+    fs::write(
+        &import_file,
+        r#"[{"id":"webperf","title":"New Title","category":"test","description":"","prompt":"overwritten?","tags":[],"created_at":"2026-05-31T00:00:00Z","updated_at":"2026-05-31T00:00:00Z"}]"#,
+    ).unwrap();
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["import", import_file.to_str().unwrap()])
+        .env("PBOX_CONFIG_FILE", &config)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1 skipped"));
+    // Original unchanged
+    let output = Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["get", "webperf"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap().trim(),
+        "Act as a web performance expert."
+    );
+}
+
+#[test]
+fn import_overwrite_replaces_existing() {
+    let dir = TempDir::new().unwrap();
+    let config = setup_prompts(&dir);
+    let import_file = dir.path().join("import.json");
+    fs::write(
+        &import_file,
+        r#"[{"id":"webperf","title":"New Title","category":"test","description":"","prompt":"replaced body","tags":[],"created_at":"2026-05-31T00:00:00Z","updated_at":"2026-05-31T00:00:00Z"}]"#,
+    ).unwrap();
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["import", import_file.to_str().unwrap(), "--overwrite"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1 updated"));
+    let output = Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["get", "webperf"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap().trim(),
+        "replaced body"
+    );
+}
+
+#[test]
+fn import_from_stdin_adds_prompts() {
+    let dir = TempDir::new().unwrap();
+    let config = dir.path().join("prompts.json");
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .arg("import")
+        .env("PBOX_CONFIG_FILE", &config)
+        .write_stdin(r#"[{"id":"stdin-prompt","title":"Stdin","category":"test","description":"","prompt":"from stdin","tags":[],"created_at":"2026-05-31T00:00:00Z","updated_at":"2026-05-31T00:00:00Z"}]"#)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1 added"));
+}
+
 // ── #5: pbox duplicate ───────────────────────────────────────────────────────
 
 #[test]
