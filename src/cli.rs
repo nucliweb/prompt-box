@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use chrono::Utc;
 use clap::{Parser, Subcommand};
 use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
-use std::io::Read;
+use std::io::{Read, Write};
 
 use crate::storage::{self, Prompt};
 
@@ -57,10 +57,7 @@ pub fn run() -> Result<()> {
         }
         Commands::Remove { id } => cmd_remove(&id),
         Commands::Search { query, json } => cmd_search(&query, json),
-        Commands::Edit { .. } => {
-            println!("not implemented");
-            Ok(())
-        }
+        Commands::Edit { id } => cmd_edit(&id),
     }
 }
 
@@ -99,9 +96,19 @@ fn cmd_add(id: &str, title: &str, category: &str, tags: &str, description: &str)
         return Err(anyhow!("prompt '{}' already exists", id));
     }
 
-    let mut prompt_text = String::new();
-    std::io::stdin().read_to_string(&mut prompt_text)?;
-    let prompt_text = prompt_text.trim().to_string();
+    let prompt_text = if should_use_editor() {
+        match open_editor("")? {
+            Some(text) => text,
+            None => {
+                println!("Aborted.");
+                return Ok(());
+            }
+        }
+    } else {
+        let mut text = String::new();
+        std::io::stdin().read_to_string(&mut text)?;
+        text.trim().to_string()
+    };
 
     let tags: Vec<String> = if tags.is_empty() {
         vec![]
@@ -124,6 +131,74 @@ fn cmd_add(id: &str, title: &str, category: &str, tags: &str, description: &str)
     storage::save_prompts(&prompts)?;
     println!("Added: {}", id);
     Ok(())
+}
+
+fn cmd_edit(id: &str) -> Result<()> {
+    let mut prompts = storage::load_prompts()?;
+    let existing = storage::find_by_id(&prompts, id)
+        .ok_or_else(|| anyhow!("prompt '{}' not found", id))?;
+
+    let initial = existing.prompt.clone();
+
+    match open_editor(&initial)? {
+        None => println!("Aborted."),
+        Some(new_text) => {
+            let p = prompts.iter_mut().find(|p| p.id == id).unwrap();
+            p.prompt = new_text;
+            p.updated_at = Utc::now().to_rfc3339();
+            storage::save_prompts(&prompts)?;
+            println!("Updated: {}", id);
+        }
+    }
+    Ok(())
+}
+
+fn should_use_editor() -> bool {
+    if std::env::var("PBOX_FORCE_EDITOR").is_ok() {
+        return true;
+    }
+    use std::io::IsTerminal;
+    std::io::stdin().is_terminal()
+}
+
+fn editor_cmd() -> String {
+    std::env::var("EDITOR")
+        .ok()
+        .filter(|e| !e.is_empty())
+        .unwrap_or_else(|| {
+            let has_nano = std::process::Command::new("which")
+                .arg("nano")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            if has_nano { "nano".to_string() } else { "vim".to_string() }
+        })
+}
+
+fn open_editor(initial: &str) -> Result<Option<String>> {
+    let mut tmp = tempfile::NamedTempFile::new()?;
+    write!(tmp, "{}", initial)?;
+    tmp.flush()?;
+
+    let editor = editor_cmd();
+    let path = tmp.path().to_owned();
+
+    let status = std::process::Command::new(&editor)
+        .arg(&path)
+        .status()
+        .map_err(|e| anyhow!("failed to launch editor '{}': {}", editor, e))?;
+
+    if !status.success() {
+        return Err(anyhow!("editor '{}' exited with error", editor));
+    }
+
+    let content = std::fs::read_to_string(&path)?.trim().to_string();
+
+    if content.is_empty() || content == initial.trim() {
+        return Ok(None);
+    }
+
+    Ok(Some(content))
 }
 
 fn cmd_search(query: &str, as_json: bool) -> Result<()> {

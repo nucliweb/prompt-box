@@ -396,3 +396,114 @@ fn get_copy_prints_confirmation_to_stderr() {
         .success()
         .stderr(predicate::str::contains("Copied"));
 }
+
+// ── T12: $EDITOR integration ──────────────────────────────────────────────────
+
+#[test]
+fn edit_nonexistent_exits_1_with_error() {
+    let dir = TempDir::new().unwrap();
+    let config = dir.path().join("empty.json");
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["edit", "nonexistent"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("nonexistent"));
+}
+
+#[test]
+fn edit_with_editor_true_aborts() {
+    let dir = TempDir::new().unwrap();
+    let config = setup_prompts(&dir);
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["edit", "webperf"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .env("EDITOR", "true")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Aborted."));
+}
+
+#[test]
+fn edit_with_script_saves_changes() {
+    let script_dir = TempDir::new().unwrap();
+    let script_path = script_dir.path().join("fake_editor.sh");
+    fs::write(&script_path, "#!/bin/sh\nprintf 'Updated prompt text' > \"$1\"\n").unwrap();
+    std::process::Command::new("chmod")
+        .args(["+x", script_path.to_str().unwrap()])
+        .status()
+        .unwrap();
+
+    let dir = TempDir::new().unwrap();
+    let config = setup_prompts(&dir);
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["edit", "webperf"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .env("EDITOR", script_path.to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Updated: webperf"));
+
+    let output = Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["get", "webperf"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap().trim(),
+        "Updated prompt text"
+    );
+}
+
+#[test]
+fn add_with_force_editor_aborts_on_empty() {
+    let dir = TempDir::new().unwrap();
+    let config = dir.path().join("prompts.json");
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["add", "test-editor", "--title", "T", "--category", "c"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .env("PBOX_FORCE_EDITOR", "1")
+        .env("EDITOR", "true")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Aborted."));
+}
+
+#[test]
+fn add_with_force_editor_saves_prompt() {
+    let script_dir = TempDir::new().unwrap();
+    let script_path = script_dir.path().join("fake_editor.sh");
+    fs::write(&script_path, "#!/bin/sh\nprintf 'My new prompt' > \"$1\"\n").unwrap();
+    std::process::Command::new("chmod")
+        .args(["+x", script_path.to_str().unwrap()])
+        .status()
+        .unwrap();
+
+    let dir = TempDir::new().unwrap();
+    let config = dir.path().join("prompts.json");
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["add", "test-editor", "--title", "T", "--category", "c"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .env("PBOX_FORCE_EDITOR", "1")
+        .env("EDITOR", script_path.to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Added: test-editor"));
+
+    let output = Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["get", "test-editor"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap().trim(),
+        "My new prompt"
+    );
+}
