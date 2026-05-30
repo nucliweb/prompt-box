@@ -240,6 +240,37 @@ Prompts are stored in the OS config directory:
 
 Press `Ctrl+P` in the Claude Code chat input to open the pbox TUI, select a prompt with `Enter`, and it is inserted into the input field.
 
+### Antigravity CLI
+
+1. Create a wrapper script at a location in your PATH (e.g. `~/.local/bin/pbox-editor`):
+
+   ```bash
+   #!/bin/bash
+   PBOX_OUTPUT_FILE="$1" pbox
+   ```
+
+   Make it executable:
+
+   ```bash
+   chmod +x ~/.local/bin/pbox-editor
+   ```
+
+2. Add a keybinding to your Antigravity keybindings (`~/.gemini/antigravity-cli/keybindings.json` or by running `/keybindings` in the CLI):
+
+   ```json
+   {
+     "edit.open_editor": ["ctrl+p"]
+   }
+   ```
+
+3. Create a shell alias in your shell configuration file (e.g. `~/.zshrc` or `~/.bashrc`) to scope the custom `EDITOR` variable to Antigravity CLI without affecting other terminal applications:
+
+   ```bash
+   alias agy='EDITOR="/path/to/pbox-editor" agy'
+   ```
+
+Press `Ctrl+P` (or the key combination configured) in the Antigravity chat input to open the pbox TUI, select a prompt with `Enter`, and it will be inserted into the prompt box.
+
 ## Environment variables
 
 | Variable | Description |

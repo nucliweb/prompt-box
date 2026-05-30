@@ -73,7 +73,11 @@ impl App {
                     return;
                 }
                 // Ctrl+E → edit, Ctrl+D → delete (avoid conflicting with search input)
+                // Disabled in selector mode (PBOX_OUTPUT_FILE set) to avoid editor loops.
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    if std::env::var("PBOX_OUTPUT_FILE").is_ok() {
+                        return;
+                    }
                     match key.code {
                         KeyCode::Char('e') if self.selected_prompt().is_some() => {
                             self.edit_mode = true;
@@ -739,6 +743,24 @@ mod tests {
         app.handle_event(&ctrl_key(KeyCode::Char('e')));
         assert!(app.edit_mode);
         assert!(app.running);
+    }
+
+    #[test]
+    fn ctrl_e_ignored_in_selector_mode() {
+        std::env::set_var("PBOX_OUTPUT_FILE", "/tmp/test");
+        let mut app = App::new(make_prompts());
+        app.handle_event(&ctrl_key(KeyCode::Char('e')));
+        std::env::remove_var("PBOX_OUTPUT_FILE");
+        assert!(!app.edit_mode);
+    }
+
+    #[test]
+    fn ctrl_d_ignored_in_selector_mode() {
+        std::env::set_var("PBOX_OUTPUT_FILE", "/tmp/test");
+        let mut app = App::new(make_prompts());
+        app.handle_event(&ctrl_key(KeyCode::Char('d')));
+        std::env::remove_var("PBOX_OUTPUT_FILE");
+        assert!(!app.confirm_delete);
     }
 
     #[test]
