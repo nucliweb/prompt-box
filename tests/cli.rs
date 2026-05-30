@@ -504,6 +504,50 @@ fn add_with_force_editor_aborts_on_empty() {
         .stdout(predicate::str::contains("Aborted."));
 }
 
+// ── #7: pbox list --category ─────────────────────────────────────────────────
+
+#[test]
+fn list_category_filter_shows_only_matching() {
+    let dir = TempDir::new().unwrap();
+    let config = setup_multiple_prompts(&dir);
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["list", "--category", "performance"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("webperf"))
+        .stdout(predicate::str::contains("Web Performance Assistant"))
+        .stdout(predicate::str::contains("css-grid").not())
+        .stdout(predicate::str::contains("rust-cli").not());
+}
+
+#[test]
+fn list_category_filter_is_case_insensitive() {
+    let dir = TempDir::new().unwrap();
+    let config = setup_multiple_prompts(&dir);
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["list", "--category", "Performance"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("webperf"));
+}
+
+#[test]
+fn list_category_filter_no_match_prints_no_prompts_found() {
+    let dir = TempDir::new().unwrap();
+    let config = setup_multiple_prompts(&dir);
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["list", "--category", "nonexistent"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No prompts found."));
+}
+
 // ── T13: Shell completions ────────────────────────────────────────────────────
 
 #[test]

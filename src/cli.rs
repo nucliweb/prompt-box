@@ -29,7 +29,10 @@ pub enum Commands {
         json: bool,
     },
     /// List all prompts
-    List,
+    List {
+        #[arg(long, help = "Filter by category (case-insensitive)")]
+        category: Option<String>,
+    },
     /// Add a new prompt (reads prompt text from stdin)
     Add {
         id: String,
@@ -54,7 +57,7 @@ pub fn run() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Get { id, copy } => cmd_get(&id, copy),
-        Commands::List => cmd_list(),
+        Commands::List { category } => cmd_list(category.as_deref()),
         Commands::Add { id, title, category, tags, description } => {
             cmd_add(&id, &title, &category, &tags, &description)
         }
@@ -71,13 +74,21 @@ fn cmd_completions(shell: Shell) -> Result<()> {
     Ok(())
 }
 
-fn cmd_list() -> Result<()> {
+fn cmd_list(category: Option<&str>) -> Result<()> {
     let prompts = storage::load_prompts()?;
-    if prompts.is_empty() {
+    let filtered: Vec<_> = prompts
+        .iter()
+        .filter(|p| match category {
+            Some(cat) => p.category.eq_ignore_ascii_case(cat),
+            None => true,
+        })
+        .collect();
+
+    if filtered.is_empty() {
         println!("No prompts found.");
         return Ok(());
     }
-    for p in &prompts {
+    for p in filtered {
         println!("[{}] {} — {}", p.category, p.id, p.title);
     }
     Ok(())
