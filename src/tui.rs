@@ -9,7 +9,7 @@ use crossterm::{
 use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
@@ -41,6 +41,10 @@ impl App {
             list_area: Rect::default(),
             copied: None,
         }
+    }
+
+    pub fn counter_text(&self) -> String {
+        format!("{}/{} prompts", self.filtered.len(), self.prompts.len())
     }
 
     pub fn selected_prompt(&self) -> Option<&Prompt> {
@@ -227,11 +231,22 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
         main_cols[1],
     );
 
-    // Status bar
+    // Status bar: key hints (left) | counter (right)
+    let status_cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Min(0), Constraint::Length(20)])
+        .split(outer[2]);
+
     frame.render_widget(
         Paragraph::new("[↑↓/scroll] Navigate  [Enter] Copy & Exit  [Esc/q] Quit")
             .style(Style::default().fg(Color::DarkGray)),
-        outer[2],
+        status_cols[0],
+    );
+    frame.render_widget(
+        Paragraph::new(app.counter_text())
+            .style(Style::default().fg(Color::DarkGray))
+            .alignment(Alignment::Right),
+        status_cols[1],
     );
 }
 
@@ -617,6 +632,32 @@ mod tests {
         app.list_area = list_area();
         app.handle_event(&mouse_click(5, 10)); // row 10 = item index 6, beyond 3 items
         assert_eq!(app.selected, 0); // unchanged
+    }
+
+    // ── counter_text ────────────────────────────────────────────────────────
+
+    #[test]
+    fn counter_text_shows_all_when_unfiltered() {
+        let app = App::new(make_prompts());
+        assert_eq!(app.counter_text(), "3/3 prompts");
+    }
+
+    #[test]
+    fn counter_text_updates_after_filter() {
+        let mut app = App::new(make_prompts());
+        // 'p' → 1 result (verified by clearing_query_restores_full_list)
+        app.handle_event(&key(KeyCode::Char('p')));
+        assert_eq!(app.filtered.len(), 1);
+        assert_eq!(app.counter_text(), "1/3 prompts");
+    }
+
+    #[test]
+    fn counter_text_shows_zero_when_no_match() {
+        let mut app = App::new(make_prompts());
+        for c in "xyzxyz".chars() {
+            app.handle_event(&key(KeyCode::Char(c)));
+        }
+        assert_eq!(app.counter_text(), "0/3 prompts");
     }
 
     // ── Enter key: copy intent ───────────────────────────────────────────────
