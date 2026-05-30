@@ -504,6 +504,79 @@ fn add_with_force_editor_aborts_on_empty() {
         .stdout(predicate::str::contains("Aborted."));
 }
 
+// ── #5: pbox duplicate ───────────────────────────────────────────────────────
+
+#[test]
+fn duplicate_creates_copy_with_new_id() {
+    let dir = TempDir::new().unwrap();
+    let config = setup_prompts(&dir);
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["duplicate", "webperf", "webperf-copy"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Duplicated: webperf → webperf-copy"));
+
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .arg("list")
+        .env("PBOX_CONFIG_FILE", &config)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("webperf"))
+        .stdout(predicate::str::contains("webperf-copy"));
+}
+
+#[test]
+fn duplicate_preserves_all_fields_except_id_and_timestamps() {
+    let dir = TempDir::new().unwrap();
+    let config = setup_prompts(&dir);
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["duplicate", "webperf", "webperf-v2"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .assert()
+        .success();
+
+    let output = Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["get", "webperf-v2"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap().trim(),
+        "Act as a web performance expert."
+    );
+}
+
+#[test]
+fn duplicate_nonexistent_source_exits_1() {
+    let dir = TempDir::new().unwrap();
+    let config = dir.path().join("empty.json");
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["duplicate", "no-such-id", "copy"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no-such-id"));
+}
+
+#[test]
+fn duplicate_existing_target_exits_1() {
+    let dir = TempDir::new().unwrap();
+    let config = setup_multiple_prompts(&dir);
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["duplicate", "webperf", "css-grid"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("css-grid"));
+}
+
 // ── #3: pbox add --prompt flag ───────────────────────────────────────────────
 
 #[test]

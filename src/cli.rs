@@ -53,6 +53,8 @@ pub enum Commands {
     Remove { id: String },
     /// Generate shell completion scripts
     Completions { shell: Shell },
+    /// Duplicate a prompt under a new id
+    Duplicate { id: String, new_id: String },
 }
 
 pub fn run() -> Result<()> {
@@ -67,7 +69,32 @@ pub fn run() -> Result<()> {
         Commands::Search { query, json } => cmd_search(&query, json),
         Commands::Edit { id } => cmd_edit(&id),
         Commands::Completions { shell } => cmd_completions(shell),
+        Commands::Duplicate { id, new_id } => cmd_duplicate(&id, &new_id),
     }
+}
+
+fn cmd_duplicate(id: &str, new_id: &str) -> Result<()> {
+    let mut prompts = storage::load_prompts()?;
+
+    if storage::find_by_id(&prompts, new_id).is_some() {
+        return Err(anyhow!("prompt '{}' already exists", new_id));
+    }
+
+    let source = storage::find_by_id(&prompts, id)
+        .ok_or_else(|| anyhow!("prompt '{}' not found", id))?
+        .clone();
+
+    let now = Utc::now().to_rfc3339();
+    prompts.push(Prompt {
+        id: new_id.to_string(),
+        created_at: now.clone(),
+        updated_at: now,
+        ..source
+    });
+
+    storage::save_prompts(&prompts)?;
+    println!("Duplicated: {} → {}", id, new_id);
+    Ok(())
 }
 
 fn cmd_completions(shell: Shell) -> Result<()> {
