@@ -1,16 +1,18 @@
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, MouseEventKind},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, MouseButton, MouseEventKind,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
     Terminal,
 };
 use std::io;
@@ -23,6 +25,7 @@ pub struct App {
     pub query: String,
     pub filtered: Vec<usize>,
     pub selected: usize,
+    pub list_area: Rect,
 }
 
 impl App {
@@ -34,7 +37,12 @@ impl App {
             query: String::new(),
             filtered,
             selected: 0,
+            list_area: Rect::default(),
         }
+    }
+
+    pub fn selected_prompt(&self) -> Option<&Prompt> {
+        self.filtered.get(self.selected).map(|&idx| &self.prompts[idx])
     }
 
     pub fn handle_event(&mut self, event: &Event) {
@@ -70,6 +78,22 @@ impl App {
                 MouseEventKind::ScrollUp => {
                     if self.selected > 0 {
                         self.selected -= 1;
+                    }
+                }
+                MouseEventKind::Down(MouseButton::Left) => {
+                    let col = mouse_event.column;
+                    let row = mouse_event.row;
+                    let a = self.list_area;
+                    // skip top/bottom borders
+                    let within = col >= a.x
+                        && col < a.x + a.width
+                        && row > a.y
+                        && row < a.y + a.height.saturating_sub(1);
+                    if within {
+                        let item_idx = (row - a.y - 1) as usize;
+                        if item_idx < self.filtered.len() {
+                            self.selected = item_idx;
+                        }
                     }
                 }
                 _ => {}
@@ -109,41 +133,98 @@ impl App {
     }
 }
 
-fn render(frame: &mut ratatui::Frame, app: &App) {
-    let chunks = Layout::default()
+fn render(frame: &mut ratatui::Frame, app: &mut App) {
+    let area = frame.area();
+
+    // Outer vertical: search | main | status
+    let outer = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(0)])
-        .split(frame.area());
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .split(area);
 
-    let search_text = format!("{}█", app.query);
-    let search_widget = Paragraph::new(search_text)
-        .block(Block::default().borders(Borders::ALL).title("Search"));
-    frame.render_widget(search_widget, chunks[0]);
+    // Main area: list (50%) | preview (50%)
+    let main_cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(outer[1]);
 
+    // Store list bounds so handle_event can map clicks to items
+    app.list_area = main_cols[0];
+
+    // Search box
+    frame.render_widget(
+        Paragraph::new(format!("{}█", app.query))
+            .block(Block::default().borders(Borders::ALL).title("Search")),
+        outer[0],
+    );
+
+    // Prompt list
     let items: Vec<ListItem> = app
         .filtered
         .iter()
         .map(|&idx| {
             let p = &app.prompts[idx];
-            let content = format!("[{}] {} — {}", p.category, p.id, p.title);
-            ListItem::new(Line::from(Span::raw(content)))
+            ListItem::new(Line::from(Span::raw(format!(
+                "[{}] {} — {}",
+                p.category, p.id, p.title
+            ))))
         })
         .collect();
-
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Prompts"))
-        .highlight_style(
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol("▶ ");
 
     let mut list_state = ListState::default();
     if !app.filtered.is_empty() {
         list_state.select(Some(app.selected));
     }
-    frame.render_stateful_widget(list, chunks[1], &mut list_state);
+    frame.render_stateful_widget(
+        List::new(items)
+            .block(Block::default().borders(Borders::ALL).title("Prompts"))
+            .highlight_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            .highlight_symbol("▶ "),
+        main_cols[0],
+        &mut list_state,
+    );
+
+    // Preview pane
+    let sep_len = main_cols[1].width.saturating_sub(2) as usize;
+    let preview_lines: Vec<Line> = match app.selected_prompt() {
+        None => vec![Line::from("No prompt selected.")],
+        Some(p) => {
+            let mut lines = vec![
+                Line::from(Span::styled(
+                    p.title.clone(),
+                    Style::default().add_modifier(Modifier::BOLD),
+                )),
+                Line::from(format!("Tags: {}", p.tags.join(", "))),
+                Line::from(format!("Description: {}", p.description)),
+                Line::from(Span::styled(
+                    "─".repeat(sep_len),
+                    Style::default().fg(Color::DarkGray),
+                )),
+                Line::from(""),
+            ];
+            for text_line in p.prompt.lines() {
+                lines.push(Line::from(text_line.to_string()));
+            }
+            lines
+        }
+    };
+    frame.render_widget(
+        Paragraph::new(preview_lines)
+            .block(Block::default().borders(Borders::ALL).title("Preview"))
+            .wrap(Wrap { trim: false }),
+        main_cols[1],
+    );
+
+    // Status bar
+    frame.render_widget(
+        Paragraph::new("[↑↓/scroll] Navigate  [Enter] Copy & Exit  [Esc/q] Quit")
+            .style(Style::default().fg(Color::DarkGray)),
+        outer[2],
+    );
 }
 
 struct TerminalGuard;
@@ -174,7 +255,7 @@ pub fn run() -> Result<()> {
 
     while app.running {
         terminal.draw(|frame| {
-            render(frame, &app);
+            render(frame, &mut app);
         })?;
 
         if event::poll(std::time::Duration::from_millis(16))? {
@@ -199,6 +280,15 @@ mod tests {
             kind,
             column: 0,
             row: 0,
+            modifiers: KeyModifiers::NONE,
+        })
+    }
+
+    fn mouse_click(column: u16, row: u16) -> Event {
+        Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
             modifiers: KeyModifiers::NONE,
         })
     }
@@ -339,7 +429,6 @@ mod tests {
     fn clearing_query_restores_full_list() {
         let mut app = App::new(make_prompts());
         app.handle_event(&key(KeyCode::Char('p')));
-        // "p" matches only "perf-review" → filtered.len() == 1
         assert_eq!(app.filtered.len(), 1);
         app.handle_event(&key(KeyCode::Backspace));
         assert_eq!(app.filtered.len(), 3);
@@ -372,7 +461,7 @@ mod tests {
 
     #[test]
     fn selection_clamps_at_last_item() {
-        let mut app = App::new(make_prompts()); // 3 prompts → max index 2
+        let mut app = App::new(make_prompts());
         for _ in 0..10 {
             app.handle_event(&key(KeyCode::Down));
         }
@@ -425,5 +514,88 @@ mod tests {
             app.handle_event(&mouse_scroll(MouseEventKind::ScrollDown));
         }
         assert_eq!(app.selected, 2);
+    }
+
+    // ── selected_prompt ─────────────────────────────────────────────────────
+
+    #[test]
+    fn selected_prompt_returns_first_prompt_by_default() {
+        let app = App::new(make_prompts());
+        let p = app.selected_prompt().unwrap();
+        assert_eq!(p.id, "perf-review");
+    }
+
+    #[test]
+    fn selected_prompt_returns_none_for_empty_list() {
+        let app = App::new(vec![]);
+        assert!(app.selected_prompt().is_none());
+    }
+
+    #[test]
+    fn selected_prompt_updates_after_navigation() {
+        let mut app = App::new(make_prompts());
+        app.handle_event(&key(KeyCode::Down));
+        let p = app.selected_prompt().unwrap();
+        assert_eq!(p.id, "code-review");
+    }
+
+    #[test]
+    fn selected_prompt_reflects_filtered_order() {
+        let mut app = App::new(make_prompts());
+        for c in "write".chars() {
+            app.handle_event(&key(KeyCode::Char(c)));
+        }
+        // "write" should rank "write-tests" first
+        let p = app.selected_prompt().unwrap();
+        assert_eq!(p.id, "write-tests");
+    }
+
+    // ── mouse click selection ───────────────────────────────────────────────
+
+    // list_area: x=0, y=3, width=40, height=20
+    // top border at row 3; first item at row 4; bottom border at row 22
+    fn list_area() -> Rect {
+        Rect { x: 0, y: 3, width: 40, height: 20 }
+    }
+
+    #[test]
+    fn mouse_click_selects_first_item() {
+        let mut app = App::new(make_prompts());
+        app.list_area = list_area();
+        app.handle_event(&mouse_click(5, 4)); // row 4 = item 0
+        assert_eq!(app.selected, 0);
+    }
+
+    #[test]
+    fn mouse_click_selects_second_item() {
+        let mut app = App::new(make_prompts());
+        app.list_area = list_area();
+        app.handle_event(&mouse_click(5, 5)); // row 5 = item 1
+        assert_eq!(app.selected, 1);
+    }
+
+    #[test]
+    fn mouse_click_on_top_border_is_noop() {
+        let mut app = App::new(make_prompts());
+        app.list_area = list_area();
+        app.handle_event(&mouse_click(5, 3)); // row 3 = top border
+        assert_eq!(app.selected, 0);
+    }
+
+    #[test]
+    fn mouse_click_outside_list_is_noop() {
+        let mut app = App::new(make_prompts());
+        app.list_area = list_area();
+        app.handle_event(&key(KeyCode::Down)); // move to item 1
+        app.handle_event(&mouse_click(50, 5)); // col 50 is outside width=40
+        assert_eq!(app.selected, 1); // unchanged
+    }
+
+    #[test]
+    fn mouse_click_beyond_items_is_noop() {
+        let mut app = App::new(make_prompts()); // 3 items
+        app.list_area = list_area();
+        app.handle_event(&mouse_click(5, 10)); // row 10 = item index 6, beyond 3 items
+        assert_eq!(app.selected, 0); // unchanged
     }
 }
