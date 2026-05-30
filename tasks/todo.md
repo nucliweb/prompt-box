@@ -14,7 +14,7 @@
 
 ## Phase 2: TUI
 
-- [ ] T8: TUI foundation (ratatui + crossterm loop, `q`/`Esc` exits cleanly)
+- [x] T8: TUI foundation (ratatui + crossterm loop, `q`/`Esc` exits cleanly)
 - [ ] T9: TUI search input + prompt list (real-time fuzzy filter, arrow nav)
 - [ ] T10: TUI split preview pane (50/50 layout, metadata + prompt text, status bar)
 - [ ] T11: TUI copy on Enter + clean exit (arboard, print "Copied: <title>")

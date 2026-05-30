@@ -102,13 +102,12 @@ fn search_help_shows_query_and_json_flag() {
         .stdout(predicate::str::contains("--json"));
 }
 
+// Real TUI requires a TTY and a running terminal — can't test as subprocess.
+// Verify manually: run `pbox` with no args, press q to exit.
 #[test]
-fn no_args_enters_tui_placeholder() {
-    Command::cargo_bin("pbox")
-        .unwrap()
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("TUI mode"));
+#[ignore]
+fn no_args_launches_tui() {
+    Command::cargo_bin("pbox").unwrap().assert().success();
 }
 
 // ── T5: add + remove ─────────────────────────────────────────────────────────
