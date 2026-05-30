@@ -1,5 +1,6 @@
 use anyhow::Result;
 
 pub fn run() -> Result<()> {
-    todo!("implement in T8")
+    println!("TUI mode (coming soon — run with a subcommand for CLI mode)");
+    Ok(())
 }
