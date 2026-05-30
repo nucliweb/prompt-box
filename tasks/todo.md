@@ -23,7 +23,7 @@
 
 ## Phase 3: Polish
 
-- [ ] T12: `$EDITOR` integration for `pbox add` / `pbox edit`
-- [ ] T13: Shell autocompletion (`pbox completions bash|zsh|fish`)
+- [x] T12: `$EDITOR` integration for `pbox add` / `pbox edit`
+- [x] T13: Shell autocompletion (`pbox completions bash|zsh|fish`)
 
-**[ ] CHECKPOINT 3** — release build clean, completions work in zsh
+**[x] CHECKPOINT 3** — release build clean, completions work in zsh

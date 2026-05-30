@@ -78,7 +78,7 @@ fn cmd_list() -> Result<()> {
         return Ok(());
     }
     for p in &prompts {
-        println!("[{}] {} — {}", p.category, p.id, p.description);
+        println!("[{}] {} — {}", p.category, p.id, p.title);
     }
     Ok(())
 }

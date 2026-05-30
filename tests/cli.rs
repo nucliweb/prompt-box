@@ -222,7 +222,7 @@ fn list_shows_category_id_and_description() {
         .assert()
         .success()
         .stdout(predicate::str::contains("[performance] webperf"))
-        .stdout(predicate::str::contains("Helps optimize Core Web Vitals"));
+        .stdout(predicate::str::contains("Web Performance Assistant"));
 }
 
 #[test]
@@ -264,6 +264,36 @@ fn get_nonexistent_exits_1_with_stderr_message() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("nonexistent"));
+}
+
+#[test]
+fn add_saves_tags_and_they_appear_in_json() {
+    let dir = TempDir::new().unwrap();
+    let config = dir.path().join("prompts.json");
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .args([
+            "add", "tagged",
+            "--title", "Tagged Prompt",
+            "--category", "test",
+            "--tags", "foo,bar",
+        ])
+        .env("PBOX_CONFIG_FILE", &config)
+        .write_stdin("prompt body")
+        .assert()
+        .success();
+
+    let output = Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["search", "tagged", "--json"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .output()
+        .unwrap();
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(output.stdout).unwrap()).unwrap();
+    let tags = parsed[0]["tags"].as_array().unwrap();
+    assert_eq!(tags, &[serde_json::json!("foo"), serde_json::json!("bar")]);
 }
 
 // ── T6: search ───────────────────────────────────────────────────────────────
