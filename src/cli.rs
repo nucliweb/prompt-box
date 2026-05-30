@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use chrono::Utc;
 use clap::{Parser, Subcommand};
+use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 use std::io::Read;
 
 use crate::storage::{self, Prompt};
@@ -55,10 +56,7 @@ pub fn run() -> Result<()> {
             cmd_add(&id, &title, &category, &tags, &description)
         }
         Commands::Remove { id } => cmd_remove(&id),
-        Commands::Search { .. } => {
-            println!("not implemented");
-            Ok(())
-        }
+        Commands::Search { query, json } => cmd_search(&query, json),
         Commands::Edit { .. } => {
             println!("not implemented");
             Ok(())
@@ -117,6 +115,37 @@ fn cmd_add(id: &str, title: &str, category: &str, tags: &str, description: &str)
 
     storage::save_prompts(&prompts)?;
     println!("Added: {}", id);
+    Ok(())
+}
+
+fn cmd_search(query: &str, as_json: bool) -> Result<()> {
+    let prompts = storage::load_prompts()?;
+    let matcher = SkimMatcherV2::default();
+
+    let mut scored: Vec<(i64, &Prompt)> = prompts
+        .iter()
+        .filter_map(|p| {
+            let haystack = format!("{} {} {} {}", p.id, p.title, p.description, p.tags.join(" "));
+            matcher.fuzzy_match(&haystack, query).map(|score| (score, p))
+        })
+        .collect();
+
+    scored.sort_by(|a, b| b.0.cmp(&a.0));
+
+    if as_json {
+        let matches: Vec<&Prompt> = scored.iter().map(|(_, p)| *p).collect();
+        println!("{}", serde_json::to_string_pretty(&matches)?);
+        return Ok(());
+    }
+
+    if scored.is_empty() {
+        println!("No matches found.");
+        return Ok(());
+    }
+
+    for (_, p) in &scored {
+        println!("[{}] {} — {}", p.category, p.id, p.title);
+    }
     Ok(())
 }
 

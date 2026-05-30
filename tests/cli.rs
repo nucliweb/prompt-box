@@ -24,6 +24,47 @@ fn setup_prompts(dir: &TempDir) -> std::path::PathBuf {
     path
 }
 
+fn setup_multiple_prompts(dir: &TempDir) -> std::path::PathBuf {
+    let path = dir.path().join("prompts.json");
+    fs::write(
+        &path,
+        r#"[
+  {
+    "id": "webperf",
+    "title": "Web Performance Assistant",
+    "category": "performance",
+    "description": "Helps optimize Core Web Vitals",
+    "prompt": "Act as a web performance expert.",
+    "tags": ["performance", "frontend"],
+    "created_at": "2026-05-30T20:00:00Z",
+    "updated_at": "2026-05-30T20:00:00Z"
+  },
+  {
+    "id": "css-grid",
+    "title": "CSS Grid Helper",
+    "category": "css",
+    "description": "Helps with CSS Grid layouts",
+    "prompt": "Act as a CSS expert.",
+    "tags": ["css", "layout"],
+    "created_at": "2026-05-30T20:00:00Z",
+    "updated_at": "2026-05-30T20:00:00Z"
+  },
+  {
+    "id": "rust-cli",
+    "title": "Rust CLI Boilerplate",
+    "category": "rust",
+    "description": "Boilerplate for Rust CLI apps",
+    "prompt": "Act as a Rust expert.",
+    "tags": ["rust", "cli"],
+    "created_at": "2026-05-30T20:00:00Z",
+    "updated_at": "2026-05-30T20:00:00Z"
+  }
+]"#,
+    )
+    .unwrap();
+    path
+}
+
 // ── T3: CLI skeleton ─────────────────────────────────────────────────────────
 
 #[test]
@@ -224,4 +265,86 @@ fn get_nonexistent_exits_1_with_stderr_message() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("nonexistent"));
+}
+
+// ── T6: search ───────────────────────────────────────────────────────────────
+
+#[test]
+fn search_returns_matching_prompts() {
+    let dir = TempDir::new().unwrap();
+    let config = setup_multiple_prompts(&dir);
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["search", "perf"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("webperf"))
+        .stdout(predicate::str::contains("Web Performance Assistant"));
+}
+
+#[test]
+fn search_ranks_best_match_first() {
+    let dir = TempDir::new().unwrap();
+    let config = setup_multiple_prompts(&dir);
+    let output = Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["search", "rust"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("rust-cli"), "expected rust-cli in output");
+    // rust-cli must rank before any other result
+    let rust_pos = stdout.find("rust-cli").unwrap();
+    let css_pos = stdout.find("css-grid").unwrap_or(usize::MAX);
+    assert!(rust_pos < css_pos, "rust-cli should rank before css-grid");
+}
+
+#[test]
+fn search_json_outputs_valid_json_array() {
+    let dir = TempDir::new().unwrap();
+    let config = setup_multiple_prompts(&dir);
+    let output = Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["search", "perf", "--json"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&stdout)
+        .expect("output should be valid JSON");
+    assert!(parsed.is_array());
+    assert!(!parsed.as_array().unwrap().is_empty());
+}
+
+#[test]
+fn search_no_matches_prints_message() {
+    let dir = TempDir::new().unwrap();
+    let config = setup_multiple_prompts(&dir);
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["search", "xyzzy_no_match_ever"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No matches found"));
+}
+
+#[test]
+fn search_json_no_matches_outputs_empty_array() {
+    let dir = TempDir::new().unwrap();
+    let config = setup_multiple_prompts(&dir);
+    let output = Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["search", "xyzzy_no_match_ever", "--json"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim())
+        .expect("output should be valid JSON");
+    assert_eq!(parsed, serde_json::json!([]));
 }

@@ -7,7 +7,7 @@
 - [x] T3: CLI skeleton + mode dispatch (clap stubs, TUI placeholder)
 - [x] T4: `pbox list` + `pbox get` (stdout, pipeable)
 - [x] T5: `pbox add` + `pbox remove`
-- [ ] T6: `pbox search` (fuzzy ranking, `--json` flag)
+- [x] T6: `pbox search` (fuzzy ranking, `--json` flag)
 - [ ] T7: `pbox get --copy` (arboard clipboard)
 
 **[ ] CHECKPOINT 1** — cargo test passes, all CLI commands work end-to-end
