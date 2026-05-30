@@ -1,0 +1,21 @@
+[package]
+name = "prompt-box"
+version = "0.1.0"
+edition = "2021"
+description = "A lightweight CLI/TUI prompt manager for developers and AI agents"
+license = "MIT"
+
+[[bin]]
+name = "pbox"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+arboard = "3"
+clap = { version = "4", features = ["derive"] }
+crossterm = { version = "0.28", features = ["event-stream"] }
+directories = "5"
+fuzzy-matcher = "0.3"
+ratatui = "0.29"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
