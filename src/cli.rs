@@ -1,7 +1,9 @@
 use anyhow::{anyhow, Result};
+use chrono::Utc;
 use clap::{Parser, Subcommand};
+use std::io::Read;
 
-use crate::storage;
+use crate::storage::{self, Prompt};
 
 #[derive(Parser)]
 #[command(name = "pbox", about = "A CLI/TUI prompt manager for developers and AI agents")]
@@ -26,7 +28,7 @@ pub enum Commands {
     },
     /// List all prompts
     List,
-    /// Add a new prompt
+    /// Add a new prompt (reads prompt text from stdin)
     Add {
         id: String,
         #[arg(long)]
@@ -35,6 +37,8 @@ pub enum Commands {
         category: String,
         #[arg(long, default_value = "")]
         tags: String,
+        #[arg(long, default_value = "")]
+        description: String,
     },
     /// Edit an existing prompt in $EDITOR
     Edit { id: String },
@@ -47,19 +51,15 @@ pub fn run() -> Result<()> {
     match cli.command {
         Commands::Get { id, copy: _ } => cmd_get(&id),
         Commands::List => cmd_list(),
+        Commands::Add { id, title, category, tags, description } => {
+            cmd_add(&id, &title, &category, &tags, &description)
+        }
+        Commands::Remove { id } => cmd_remove(&id),
         Commands::Search { .. } => {
             println!("not implemented");
             Ok(())
         }
-        Commands::Add { .. } => {
-            println!("not implemented");
-            Ok(())
-        }
         Commands::Edit { .. } => {
-            println!("not implemented");
-            Ok(())
-        }
-        Commands::Remove { .. } => {
             println!("not implemented");
             Ok(())
         }
@@ -83,5 +83,53 @@ fn cmd_get(id: &str) -> Result<()> {
     let p = storage::find_by_id(&prompts, id)
         .ok_or_else(|| anyhow!("prompt '{}' not found", id))?;
     print!("{}", p.prompt);
+    Ok(())
+}
+
+fn cmd_add(id: &str, title: &str, category: &str, tags: &str, description: &str) -> Result<()> {
+    let mut prompts = storage::load_prompts()?;
+
+    if storage::find_by_id(&prompts, id).is_some() {
+        return Err(anyhow!("prompt '{}' already exists", id));
+    }
+
+    let mut prompt_text = String::new();
+    std::io::stdin().read_to_string(&mut prompt_text)?;
+    let prompt_text = prompt_text.trim().to_string();
+
+    let tags: Vec<String> = if tags.is_empty() {
+        vec![]
+    } else {
+        tags.split(',').map(|t| t.trim().to_string()).collect()
+    };
+
+    let now = Utc::now().to_rfc3339();
+    prompts.push(Prompt {
+        id: id.to_string(),
+        title: title.to_string(),
+        category: category.to_string(),
+        description: description.to_string(),
+        prompt: prompt_text,
+        tags,
+        created_at: now.clone(),
+        updated_at: now,
+    });
+
+    storage::save_prompts(&prompts)?;
+    println!("Added: {}", id);
+    Ok(())
+}
+
+fn cmd_remove(id: &str) -> Result<()> {
+    let mut prompts = storage::load_prompts()?;
+    let len_before = prompts.len();
+    prompts.retain(|p| p.id != id);
+
+    if prompts.len() == len_before {
+        return Err(anyhow!("prompt '{}' not found", id));
+    }
+
+    storage::save_prompts(&prompts)?;
+    println!("Removed: {}", id);
     Ok(())
 }

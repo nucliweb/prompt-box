@@ -16,6 +16,7 @@ tempfile = "3"
 
 [dependencies]
 anyhow = "1"
+chrono = "0.4"
 arboard = "3"
 clap = { version = "4", features = ["derive"] }
 crossterm = { version = "0.28", features = ["event-stream"] }

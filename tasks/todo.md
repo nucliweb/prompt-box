@@ -6,7 +6,7 @@
 - [x] T2: Storage layer (`Prompt` struct, JSON r/w, config dir, unit tests)
 - [x] T3: CLI skeleton + mode dispatch (clap stubs, TUI placeholder)
 - [x] T4: `pbox list` + `pbox get` (stdout, pipeable)
-- [ ] T5: `pbox add` + `pbox remove`
+- [x] T5: `pbox add` + `pbox remove`
 - [ ] T6: `pbox search` (fuzzy ranking, `--json` flag)
 - [ ] T7: `pbox get --copy` (arboard clipboard)
 
