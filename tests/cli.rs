@@ -504,6 +504,66 @@ fn add_with_force_editor_aborts_on_empty() {
         .stdout(predicate::str::contains("Aborted."));
 }
 
+// ── #3: pbox add --prompt flag ───────────────────────────────────────────────
+
+#[test]
+fn add_prompt_flag_saves_without_stdin_or_editor() {
+    let dir = TempDir::new().unwrap();
+    let config = dir.path().join("prompts.json");
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .args([
+            "add", "inline",
+            "--title", "Inline",
+            "--category", "test",
+            "--prompt", "my inline prompt",
+        ])
+        .env("PBOX_CONFIG_FILE", &config)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Added: inline"));
+
+    let output = Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["get", "inline"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap().trim(),
+        "my inline prompt"
+    );
+}
+
+#[test]
+fn add_prompt_flag_takes_precedence_over_stdin() {
+    let dir = TempDir::new().unwrap();
+    let config = dir.path().join("prompts.json");
+    Command::cargo_bin("pbox")
+        .unwrap()
+        .args([
+            "add", "inline2",
+            "--title", "Inline2",
+            "--category", "test",
+            "--prompt", "from flag",
+        ])
+        .env("PBOX_CONFIG_FILE", &config)
+        .write_stdin("from stdin")
+        .assert()
+        .success();
+
+    let output = Command::cargo_bin("pbox")
+        .unwrap()
+        .args(["get", "inline2"])
+        .env("PBOX_CONFIG_FILE", &config)
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap().trim(),
+        "from flag"
+    );
+}
+
 // ── #7: pbox list --category ─────────────────────────────────────────────────
 
 #[test]

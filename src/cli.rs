@@ -33,7 +33,7 @@ pub enum Commands {
         #[arg(long, help = "Filter by category (case-insensitive)")]
         category: Option<String>,
     },
-    /// Add a new prompt (reads prompt text from stdin)
+    /// Add a new prompt (reads prompt text from stdin or $EDITOR, or use --prompt)
     Add {
         id: String,
         #[arg(long)]
@@ -44,6 +44,8 @@ pub enum Commands {
         tags: String,
         #[arg(long, default_value = "")]
         description: String,
+        #[arg(long, help = "Prompt body (skips stdin and editor)")]
+        prompt: Option<String>,
     },
     /// Edit an existing prompt in $EDITOR
     Edit { id: String },
@@ -58,8 +60,8 @@ pub fn run() -> Result<()> {
     match cli.command {
         Commands::Get { id, copy } => cmd_get(&id, copy),
         Commands::List { category } => cmd_list(category.as_deref()),
-        Commands::Add { id, title, category, tags, description } => {
-            cmd_add(&id, &title, &category, &tags, &description)
+        Commands::Add { id, title, category, tags, description, prompt } => {
+            cmd_add(&id, &title, &category, &tags, &description, prompt.as_deref())
         }
         Commands::Remove { id } => cmd_remove(&id),
         Commands::Search { query, json } => cmd_search(&query, json),
@@ -110,14 +112,16 @@ fn cmd_get(id: &str, copy: bool) -> Result<()> {
     Ok(())
 }
 
-fn cmd_add(id: &str, title: &str, category: &str, tags: &str, description: &str) -> Result<()> {
+fn cmd_add(id: &str, title: &str, category: &str, tags: &str, description: &str, inline: Option<&str>) -> Result<()> {
     let mut prompts = storage::load_prompts()?;
 
     if storage::find_by_id(&prompts, id).is_some() {
         return Err(anyhow!("prompt '{}' already exists", id));
     }
 
-    let prompt_text = if should_use_editor() {
+    let prompt_text = if let Some(text) = inline {
+        text.trim().to_string()
+    } else if should_use_editor() {
         match open_editor("")? {
             Some(text) => text,
             None => {
